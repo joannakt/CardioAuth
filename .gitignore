@@ -1,0 +1,51 @@
+# --- secrets / local env -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- python -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+report.xml
+.mypy_cache/
+
+# --- node / frontend ----------------------------------------------------
+node_modules/
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+frontend/.turbo/
+.turbo/
+npm-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# --- runtime state / PHI-prone artefacts --------------------------------
+logs/
+data/blobs/
+data/exports/
+*.sqlite
+*.sqlite3
+*.dump
+*.sql.gz
+reports/eval-*.json
+
+# --- os / editor --------------------------------------------------------
+.DS_Store
+*.swp
+.idea/
+.vscode/

@@ -1,0 +1,194 @@
+# CardioAuth — illustrative criteria seed pack (SHAPE ONLY)
+#
+# STATUS: PLACEHOLDER — UNVERIFIED — requires clinical review before use.
+# Every criterion below is an illustration of the *format*, not medical policy.
+# Gate values ("180", "40", the boolean predicates) are dummies chosen to demonstrate
+# the anatomy mapping and the logic operators from DESIGN.md §2.6. They are NOT
+# appropriate-use criteria and must be replaced with the owner's licensed, clinically
+# reviewed source before any real use. The system never invents or remembers a rule:
+# this file is data, loaded into a criteria_set_version with is_placeholder=true.
+
+seed_version:
+  label: "PLACEHOLDER — UNVERIFIED — requires clinical review before use"
+  is_placeholder: true
+  source_citation:
+    doc_name: "ILLUSTRATIVE PLACEHOLDER — not a real policy document"
+    publisher: "CardioAuth (placeholder)"
+    version: "0.0-seed"
+    date: "2026-10-18"
+    url: null
+  effective_from: "2026-10-18"
+  effective_to: null
+
+# One global, payer-agnostic ("general") criteria set per procedure.
+# A payer-specific set is the same shape with `payer:` set; it wins in resolution (DESIGN.md §2.6).
+sets:
+  - key: "tte.placeholder"
+    name: "TTE — PLACEHOLDER general criteria"
+    procedure: "tte"
+    payer: null            # null == "general"
+    scope: "global"
+    criteria:
+      - code: "TTE-01"
+        ordinal: 10
+        category: "indication"
+        plain_text: "PLACEHOLDER: the request documents a cardiac symptom or a finding that warrants transthoracic echocardiography."
+        required_fields: ["symptom.present", "plan_requested_study"]
+        logic:
+          op: "any_of"
+          of:
+            - {op: "exists", field: "symptom.present", equals: true}
+            - {op: "exists", field: "diagnosis.icd10"}
+      - code: "TTE-02"
+        ordinal: 20
+        category: "documentation"
+        plain_text: "PLACEHOLDER: the request documents the specific clinical question the study is expected to answer."
+        required_fields: ["plan_requested_study"]
+        logic: {op: "exists", field: "plan_requested_study"}
+      - code: "TTE-03"
+        ordinal: 30
+        category: "prior_testing"
+        plain_text: "PLACEHOLDER: a prior echocardiogram result, if any, is documented with its date."
+        required_fields: ["prior_test.type", "prior_test.date"]
+        logic:
+          op: "any_of"
+          of:
+            - {op: "absent_or_negated", field: "prior_test.type"}
+            - {op: "all_of", of: [{op: "exists", field: "prior_test.type"},
+                                  {op: "exists", field: "prior_test.date"}]}
+
+  - key: "spect_mpi.placeholder"
+    name: "Nuclear stress / SPECT MPI — PLACEHOLDER general criteria"
+    procedure: "spect_mpi"
+    payer: null
+    scope: "global"
+    criteria:
+      - code: "MPI-01"
+        ordinal: 10
+        category: "symptom"
+        plain_text: "PLACEHOLDER: chest pain or an anginal equivalent is documented, with onset described."
+        required_fields: ["symptom.present", "symptom.type", "symptom.onset_date"]
+        logic:
+          op: "all_of"
+          of: [{op: "in", field: "symptom.type", value: ["chest_pain", "anginal_equivalent", "dyspnea_on_exertion"]},
+               {op: "exists", field: "symptom.onset_date"}]
+      - code: "MPI-02"
+        ordinal: 20
+        category: "prior_testing"
+        plain_text: "PLACEHOLDER: a prior stress test or anatomic imaging result is documented with its date."
+        required_fields: ["prior_test.type", "prior_test.date", "prior_test.result_summary"]
+        logic:
+          op: "any_of"
+          of:
+            - {op: "absent_or_negated", field: "prior_test.type"}
+            - {op: "exists", field: "prior_test.result_summary"}
+      - code: "MPI-03"
+        ordinal: 30
+        category: "technical_eligibility"
+        plain_text: "PLACEHOLDER: the request documents whether the patient can exercise adequately."
+        required_fields: ["exercise_capacity.mets", "exercise_capacity.limiting_symptom"]
+        logic:
+          op: "any_of"
+          of:
+            - {op: "exists", field: "exercise_capacity.mets"}
+            - {op: "exists", field: "exercise_capacity.limiting_symptom"}
+            - {op: "exists", field: "physical_limitation.type"}
+
+  - key: "ccta.placeholder"
+    name: "Coronary CT angiography — PLACEHOLDER general criteria"
+    procedure: "ccta"
+    payer: null
+    scope: "global"
+    criteria:
+      - code: "CCTA-01"
+        ordinal: 10
+        category: "risk_stratification"
+        plain_text: "PLACEHOLDER: risk factors relevant to coronary artery disease are documented."
+        required_fields: ["risk_factor.type"]
+        logic: {op: "exists", field: "risk_factor.type"}
+      - code: "CCTA-02"
+        ordinal: 20
+        category: "contraindication"
+        plain_text: "PLACEHOLDER: no documented contraindication to contrast administration or beta blockade."
+        required_fields: ["contraindication.present"]
+        logic:
+          op: "any_of"
+          of: [{op: "absent_or_negated", field: "contraindication.present"},
+               {op: "exists", field: "contraindication.present", equals: false}]
+      - code: "CCTA-03"
+        ordinal: 30
+        category: "prior_testing"
+        plain_text: "PLACEHOLDER: a prior stress test result is documented, if one was performed."
+        required_fields: ["prior_test.type", "prior_test.result_summary"]
+        logic:
+          op: "any_of"
+          of:
+            - {op: "absent_or_negated", field: "prior_test.type"}
+            - {op: "exists", field: "prior_test.result_summary"}
+
+  - key: "cardiac_pet.placeholder"
+    name: "Cardiac PET — PLACEHOLDER general criteria"
+    procedure: "cardiac_pet"
+    payer: null
+    scope: "global"
+    criteria:
+      - code: "PET-01"
+        ordinal: 10
+        category: "indication"
+        plain_text: "PLACEHOLDER: a documented clinical question requires myocardial perfusion or viability assessment."
+        required_fields: ["plan_requested_study"]
+        logic: {op: "exists", field: "plan_requested_study"}
+      - code: "PET-02"
+        ordinal: 20
+        category: "prior_testing"
+        plain_text: "PLACEHOLDER: a prior non-invasive test result is documented, unless PET is the first test."
+        required_fields: ["prior_test.type", "prior_test.result_summary"]
+        logic:
+          op: "any_of"
+          of:
+            - {op: "absent_or_negated", field: "prior_test.type"}
+            - {op: "exists", field: "prior_test.result_summary"}
+
+  - key: "cardiac_mri.placeholder"
+    name: "Cardiac MRI — PLACEHOLDER general criteria"
+    procedure: "cardiac_mri"
+    payer: null
+    scope: "global"
+    criteria:
+      - code: "CMR-01"
+        ordinal: 10
+        category: "indication"
+        plain_text: "PLACEHOLDER: the request documents the specific structural or functional question MRI is expected to answer."
+        required_fields: ["plan_requested_study"]
+        logic: {op: "exists", field: "plan_requested_study"}
+      - code: "CMR-02"
+        ordinal: 20
+        category: "documentation"
+        plain_text: "PLACEHOLDER: recent ventricular function or a prior imaging result is documented."
+        required_fields: ["lvef.value", "prior_test.result_summary"]
+        logic:
+          op: "any_of"
+          of: [{op: "exists", field: "lvef.value"},
+               {op: "exists", field: "prior_test.result_summary"}]
+      - code: "CMR-03"
+        ordinal: 30
+        category: "contraindication"
+        plain_text: "PLACEHOLDER: implantable device status and other MRI safety factors are documented."
+        required_fields: ["device.present"]
+        logic: {op: "exists", field: "device.present"}
+
+# ---------------------------------------------------------------------------
+# Anatomy mapping, in words (DESIGN.md §2.6 / §1.2):
+#   procedure  -> which criteria sets are candidates for a case
+#   payer      -> a payer-specific set beats the "general" set (payer = null)
+#   scope      -> a practice-scoped set beats a global one
+#   effective_from/effective_to -> resolved against the case's date_of_service
+#   logic      -> closed operator set interpreted by criteria_service; unknown
+#                 field or operator is rejected when the criterion is SAVED,
+#                 so a broken rule can never be published
+#   required_fields -> drive "insufficient documentation" instead of "not met"
+#                      whenever a referenced field has no current, sourced fact
+#
+# Adding a sixth procedure = a new `procedure` row + optional sets here.
+# No application code changes.
+# ---------------------------------------------------------------------------

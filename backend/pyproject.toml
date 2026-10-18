@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cardioauth"
+version = "0.1.0"
+description = "Prior-authorization and appeal assistant for independent cardiology practices (M1a: schema + scaffolding)"
+requires-python = ">=3.12"
+# Runtime dependencies. The exact resolved versions used by this commit are
+# frozen in requirements.lock; install with `pip install -r requirements.lock`.
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlalchemy>=2.0",
+    "alembic",
+    "psycopg[binary]>=3.2",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "python-multipart",
+    "argon2-cffi",   # M1b: Argon2id password hashing
+    "pyotp",         # M1b: TOTP second factor
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "ruff",
+    "mypy",
+]
+
+[project.scripts]
+cardioauth-audit-verify = "cardioauth.audit.chain:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cardioauth*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "db: test requires a live PostgreSQL database (CARDIOAUTH_TEST_DATABASE_URL)",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+# The PHI-in-logs rule (§7.5) is enforced by tests/test_logging_phi_filter.py
+# plus the codebase log-call audit in the same file; see docs/DEV.md.
+ignore = ["S101"]
