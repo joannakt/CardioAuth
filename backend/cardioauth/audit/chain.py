@@ -227,7 +227,10 @@ def _iter_rows(rows: Iterable[dict[str, Any]]) -> Sequence[dict[str, Any]]:
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI: verify the audit chain; non-zero exit when it is broken (§2.9, M1 acceptance 4)."""
     parser = argparse.ArgumentParser(description="Verify the CardioAuth audit hash chain.")
-    parser.add_argument("--database-url", default=os.environ.get("DATABASE_URL"), help="SQLAlchemy URL")
+    # No os.environ here: DATABASE_URL is a declared Settings field, and
+    # tests/test_settings_guards.py enforces that nothing outside settings.py reads
+    # the environment directly.
+    parser.add_argument("--database-url", default=None, help="SQLAlchemy URL (default: Settings.database_url)")
     parser.add_argument("--limit", type=int, default=None, help="verify only the first N rows")
     args = parser.parse_args(argv)
 

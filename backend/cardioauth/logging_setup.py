@@ -66,7 +66,11 @@ class PhiLogFilter(logging.Filter):
         self.allow_phi_body = allow_phi_body
 
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 - logging API
-        for key in PHI_EXTRA_KEYS:
+        # A PHI-shaped value can arrive either as a conventional `extra=` key
+        # (PHI_EXTRA_KEYS) or under one of the denylisted names (PHI_DENYLIST), so both
+        # sets are checked against the record's attributes. Without the union,
+        # `logger.info("msg", extra={"quote_text": ...})` would sail through.
+        for key in PHI_EXTRA_KEYS | frozenset(PHI_DENYLIST):
             if key in record.__dict__:
                 if key == "phi_body" and self.allow_phi_body:
                     continue

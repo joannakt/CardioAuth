@@ -110,7 +110,7 @@ def test_verify_cli_exit_code(test_database_url: str) -> None:
     )
     if result.returncode == 2:  # script not found from this cwd: try the explicit path
         result = subprocess.run(
-            [sys.executable, "../scripts/audit_chain_verify.py", "--database-url", test_database_url],
+            [sys.executable, str(__import__("pathlib").Path(__file__).resolve().parents[2] / "scripts" / "audit_chain_verify.py"), "--database-url", test_database_url],
             capture_output=True, text=True, cwd=str(__import__("pathlib").Path(__file__).resolve().parents[1]),
             check=False,
         )
@@ -124,7 +124,7 @@ def test_span_integrity_sweep_script_is_runnable(test_database_url: str) -> None
     import sys
 
     result = subprocess.run(
-        [sys.executable, "scripts/check_span_integrity.py", "--database-url", test_database_url],
+        [sys.executable, str(__import__("pathlib").Path(__file__).resolve().parents[2] / "scripts" / "check_span_integrity.py"), "--database-url", test_database_url],
         capture_output=True, text=True, check=False,
         cwd=str(__import__("pathlib").Path(__file__).resolve().parents[1]),
     )

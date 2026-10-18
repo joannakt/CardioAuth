@@ -1,0 +1,20 @@
+# CardioAuth dev proxy — the single public surface (container port 3000).
+# /api/* goes to the FastAPI app; everything else goes to the Next.js front end.
+# This is a development configuration: no TLS, no auth. Do not deploy as-is.
+
+:3000 {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

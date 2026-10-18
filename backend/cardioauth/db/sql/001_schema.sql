@@ -133,7 +133,10 @@ CREATE TABLE cardioauth.payer (
     is_active       boolean NOT NULL DEFAULT true,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT uq_payer_identity UNIQUE (name, state, plan_hint),
+    -- uq_payer_identity is created as an expression index below the table, not as a
+    -- UNIQUE constraint: PostgreSQL treats NULLs as distinct, so a plain UNIQUE
+    -- (name, state, plan_hint) would let duplicate payers in whenever a plan hint is
+    -- absent. The index coalesces the nullable columns to a sentinel instead.
     CONSTRAINT ck_payer_turnaround CHECK (turnaround_days > 0)
 );
 
@@ -346,6 +349,9 @@ CREATE TABLE cardioauth.criteria_set (
     updated_at        timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT ck_criteria_set_scope CHECK ((scope = 'practice') = (practice_id IS NOT NULL))
 );
+CREATE UNIQUE INDEX uq_payer_identity ON cardioauth.payer
+    (name, coalesce(state, ''), coalesce(plan_hint, ''));
+
 CREATE UNIQUE INDEX uq_criteria_set_identity ON cardioauth.criteria_set
     (key, scope, coalesce(practice_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
