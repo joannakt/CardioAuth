@@ -24,7 +24,17 @@ from cardioauth.settings import Settings, get_settings  # noqa: E402
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # ``disable_existing_loggers=False`` is load-bearing, not cosmetic. ``fileConfig`` defaults
+    # to True, which sets ``disabled = True`` on *every* logger that already exists and is not
+    # named in alembic.ini — i.e. on the whole ``cardioauth.*`` namespace, and on anything else
+    # the host process has already imported (``httpx``, ``sqlalchemy``, ...). When this module
+    # runs inside a process that also logs, that silences the application for the rest of that
+    # process's life: ``Logger.isEnabledFor`` then returns False and records are dropped before
+    # any handler can see them. That is what wiped out the application's log stream in the test
+    # suite once the first database fixture had run; the same hazard applies to any in-process
+    # migration (a startup hook, a management command) and there it would be invisible.
+    # Alembic configures its own loggers here; it must not reconfigure anybody else's.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 logger = logging.getLogger("alembic.env")
 

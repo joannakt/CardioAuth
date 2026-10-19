@@ -44,14 +44,14 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import contextmanager
-from typing import Any, Iterator
+from typing import Any
 
 import pytest
 from sqlalchemy import text
 
 from tests.authz_probe import PHI_SENTINEL_HEADER
 from tests.authz_support import World, chain_verifies, sign_in, step_up
+from tests.logging_capture import capture_application_logs
 
 pytestmark = pytest.mark.db
 
@@ -71,43 +71,6 @@ CALLER_REQUEST_ID = SENTINELS["request_id"]
 
 #: Loggers that belong to the test client's HTTP transport (httpx), not to the application.
 CLIENT_TRANSPORT_LOGGERS = frozenset({"httpx", "httpcore", "urllib3"})
-
-
-class _CollectRecords(logging.Handler):
-    """Collects every record the application emits, whatever pytest does to the root logger.
-
-    ``configure_logging`` — called by ``create_app`` at startup, in the ``probe_client`` fixture
-    — clears the root logger's handlers, which is where pytest's ``caplog`` capture handler lives.
-    A test that read ``caplog.records`` would then capture records from some earlier tests' clients
-    and none from the application, depending on what ran before it in the session. Attaching to the
-    ``cardioauth`` logger — the application's own namespace — cannot be cleared by the application,
-    so this reads exactly the records a deployed handler would write.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(level=logging.DEBUG)
-        self.records: list[logging.LogRecord] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        self.records.append(record)
-
-
-@contextmanager
-def _capture_logs() -> Iterator[list[logging.LogRecord]]:
-    handler = _CollectRecords()
-    logger = logging.getLogger("cardioauth")
-    previous_level = logger.level
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(handler)
-    # Also on the root logger: a record that propagates is written by every handler in the
-    # chain, and this is where a deployed handler sits.
-    logging.getLogger().addHandler(handler)
-    try:
-        yield handler.records
-    finally:
-        logger.removeHandler(handler)
-        logging.getLogger().removeHandler(handler)
-        logger.setLevel(previous_level)
 
 
 def _head(engine) -> int:  # noqa: ANN001
@@ -200,7 +163,7 @@ def test_sentinels_reach_the_application_but_never_a_log_or_the_audit_chain(
 ) -> None:
     """One run, four requests, six sentinel locations, zero leaks."""
     since = _head(engine)
-    with _capture_logs() as captured:
+    with capture_application_logs() as captured:
         responses = _requests(probe_client, world, with_request_id=True)
     allowed, role_denied = responses["permitted"], responses["role_denied"]
     undeclared, cross_practice = responses["undeclared"], responses["cross_practice"]
@@ -273,7 +236,7 @@ def test_the_cross_practice_refusal_names_no_other_practice(
 ) -> None:
     """A 404 must not leak the other practice, in the response, the log or the audit row."""
     since = _head(engine)
-    with _capture_logs() as captured:
+    with capture_application_logs() as captured:
         responses = _requests(probe_client, world, with_request_id=True)
     assert responses["cross_practice"].status_code == 404
     assert str(world.practices["b"]) not in responses["cross_practice"].text
@@ -309,7 +272,7 @@ def test_the_request_id_on_the_audit_row_is_the_servers_own(
     row of the same request names the same id, so a log line and its audit row still match.
     """
     since = _head(engine)
-    with _capture_logs() as captured:
+    with capture_application_logs() as captured:
         responses = _requests(probe_client, world, with_request_id=True)
 
     returned = {response.headers.get("x-request-id") for response in responses.values()}
