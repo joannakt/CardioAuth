@@ -523,3 +523,48 @@ def auth_users(engine) -> Iterator[AuthUsers]:  # noqa: ANN001
                 text("DELETE FROM cardioauth.practice WHERE id = :practice_id"), {"practice_id": practice_id}
             )
             session.commit()
+
+
+# ---------------------------------------------------------------------------
+# M1b-2 authorisation fixtures (see tests/authz_support.py for the helpers)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def totp_clock(monkeypatch: pytest.MonkeyPatch):  # noqa: ANN201
+    """A controllable TOTP clock: codes stay inside the +-1 step drift window, and a test that
+    needs a second code advances the clock instead of replaying a spent step."""
+    from tests.authz_support import make_totp_clock
+
+    return make_totp_clock(monkeypatch)
+
+
+@pytest.fixture
+def world(engine) -> Iterator[object]:  # noqa: ANN001
+    """Two practices, three accounts each, one case and one criteria version per practice.
+
+    The smallest arrangement that can show practice A's coordinator cannot read or mutate
+    practice B's case, with a second user in each practice so "same practice" is not
+    accidentally "same user".
+    """
+    from tests.authz_support import create_world, destroy_world
+
+    built = create_world(engine)
+    try:
+        yield built
+    finally:
+        destroy_world(engine, built)
+
+
+@pytest.fixture
+def probe_app(auth_app):  # noqa: ANN001
+    """The real application plus the test-only probe routes, built fresh per test."""
+    from tests.authz_support import build_probe_app
+
+    return build_probe_app()
+
+
+@pytest.fixture
+def probe_client(probe_app):  # noqa: ANN001
+    from fastapi.testclient import TestClient
+
+    with TestClient(probe_app) as client:
+        yield client

@@ -17,12 +17,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from cardioauth import __version__
+from cardioauth.authz.policy import PolicyRoute
 from cardioauth.db import get_engine
 from cardioauth.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["health"])
+# PolicyRoute: the route refuses to run unless ROUTE_POLICIES declares it (deny by default).
+router = APIRouter(tags=["health"], route_class=PolicyRoute)
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 

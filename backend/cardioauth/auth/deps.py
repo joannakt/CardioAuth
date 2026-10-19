@@ -135,6 +135,31 @@ def current_auth(
     return AuthContext(session=session, row=lookup.row, user=lookup.user, context=context, settings=settings)
 
 
+def current_auth_optional(
+    request: Request,
+    session: Annotated[Session, Depends(get_db)],
+    context: Annotated[service.RequestContext, Depends(request_context)],
+) -> AuthContext | None:
+    """Like :func:`current_auth`, but ``None`` instead of an exception.
+
+    Used only where a refusal has to be *attributed* to an actor — the deny-by-default guard
+    for a route that declared no permission (:mod:`cardioauth.authz.policy`). It never
+    raises, never slides the idle window and never writes an audit row: a caller that is not
+    authenticated cannot be named in the log, and an unknown cookie must not be able to append
+    rows (§7.5). A pending-second-factor session resolves here (it is *someone*), but it is
+    still refused downstream because every permission check starts from
+    :func:`require_authenticated`.
+    """
+    settings = get_settings()
+    raw = _session_cookie_value(request, settings)
+    if not raw:
+        return None
+    lookup = service.load_session(session, raw_token=raw, settings=settings)
+    if not lookup.ok or lookup.row is None or lookup.user is None:
+        return None
+    return AuthContext(session=session, row=lookup.row, user=lookup.user, context=context, settings=settings)
+
+
 def require_authenticated(auth: Annotated[AuthContext, Depends(current_auth)]) -> AuthContext:
     """A session that satisfies the second-factor policy for this user's role."""
     if not service.session_meets_factor_policy(auth.row, auth.user, settings=auth.settings):
@@ -222,6 +247,7 @@ def require_roles(*roles: str) -> Callable[[AuthContext], AuthContext]:
 __all__ = [
     "AuthContext",
     "current_auth",
+    "current_auth_optional",
     "get_db",
     "get_settings_dep",
     "request_context",

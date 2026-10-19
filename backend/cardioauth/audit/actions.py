@@ -51,6 +51,10 @@ EDIT_ACTIONS: Final[frozenset[str]] = frozenset(
         "criteria.version_published",
         "criteria.criterion_updated",
         "case.criteria_repinned",
+        # --- ADDED IN M1b-2 (RBAC) ------------------------------------------
+        # §7.3 "Delete/redact a case": a soft redaction keeps the case row and the audit
+        # trail and clears the clinical payload, so it is an edit the log must show.
+        "case.redacted",
     }
 )
 
@@ -94,14 +98,30 @@ AUTH_ACTIONS: Final[frozenset[str]] = frozenset(
 # --- §7.4 "Status" ---------------------------------------------------------
 STATUS_ACTIONS: Final[frozenset[str]] = frozenset({"case.status_changed"})
 
+# --- ADDED IN M1b-2: authorisation decisions (§7.3 "every denial is audited") ----------
+# One action for every refused authorisation decision: a role that does not hold the
+# permission, a sensitive permission without a fresh step-up, a constraint or precondition
+# that was not met, an object outside the practice, and an endpoint that declared no
+# policy at all. The reason code and the required permission travel in ``detail``; the
+# actor, the object type and the object id are columns. Successful decisions are
+# deliberately NOT logged here: the domain action they permit (case.viewed,
+# letter.exported, ...) is the record, and a row per allowed request would bury it.
+AUTHZ_ACTIONS: Final[frozenset[str]] = frozenset({"authz.denied"})
+
 #: The complete vocabulary. An audit write whose action is not here is a bug.
 ALL_ACTIONS: Final[frozenset[str]] = (
-    VIEW_ACTIONS | EDIT_ACTIONS | EXPORT_SIGN_ACTIONS | AUTH_ACTIONS | STATUS_ACTIONS
+    VIEW_ACTIONS
+    | EDIT_ACTIONS
+    | EXPORT_SIGN_ACTIONS
+    | AUTH_ACTIONS
+    | STATUS_ACTIONS
+    | AUTHZ_ACTIONS
 )
 
 __all__ = [
     "ALL_ACTIONS",
     "AUTH_ACTIONS",
+    "AUTHZ_ACTIONS",
     "EDIT_ACTIONS",
     "EXPORT_SIGN_ACTIONS",
     "STATUS_ACTIONS",

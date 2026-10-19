@@ -42,7 +42,7 @@ def test_migration_applies_to_an_empty_database_and_downgrade_round_trips(monkey
                 text("SELECT tablename FROM pg_tables WHERE schemaname = 'cardioauth'")
             )
         }
-    assert revision == "0002"
+    assert revision == "0003"
     assert tables == DDL_TABLES, f"schema drift: {DDL_TABLES ^ tables}"
 
     command.downgrade(cfg, "base")
@@ -113,4 +113,4 @@ def test_orm_matches_the_migrated_database(conn) -> None:
 def test_expected_head_matches_the_latest_revision(conn) -> None:
     from cardioauth.api.health import expected_head_revision
 
-    assert expected_head_revision() == "0002"
+    assert expected_head_revision() == "0003"

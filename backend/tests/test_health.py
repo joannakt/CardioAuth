@@ -22,8 +22,8 @@ def test_health_reports_ok_with_the_current_revision(client: TestClient, test_da
     assert body["status"] == "ok"
     assert body["checks"] == {"liveness": "ok", "database": "ok", "schema": "ok"}
     assert body["database"]["connected"] is True
-    assert body["database"]["revision"] == "0002"
-    assert body["database"]["expected_revision"] == "0002"
+    assert body["database"]["revision"] == "0003"
+    assert body["database"]["expected_revision"] == "0003"
     assert body["database"]["latency_ms"] >= 0
     assert body["service"] == "cardioauth-api"
     assert response.headers["x-cardioauth-version"]

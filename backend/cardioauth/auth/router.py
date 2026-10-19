@@ -60,12 +60,15 @@ from cardioauth.auth.schemas import (
     SessionOut,
     StepUpRequest,
 )
+from cardioauth.authz.policy import PolicyRoute
 from cardioauth.db.models import AppUser, UserSession
 from cardioauth.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/auth", tags=["auth"])
+# Every endpoint below is declared in cardioauth.authz.policy.ROUTE_POLICIES; an undeclared
+# one would be refused at request time and stop the app from starting.
+router = APIRouter(prefix="/api/auth", tags=["auth"], route_class=PolicyRoute)
 
 
 # ---------------------------------------------------------------------------
