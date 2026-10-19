@@ -23,6 +23,7 @@ from cardioauth.audit.actions import AUTH_ACTIONS
 from cardioauth.audit.chain import AuditChainError, canonical_payload, verify_chain
 from cardioauth.settings import get_settings
 
+from tests.logging_capture import capture_application_logs
 from tests.test_auth_api import enrol_and_activate, fresh_totp_code, login, totp_code
 
 pytestmark = pytest.mark.db
@@ -140,10 +141,17 @@ def test_session_expiry_is_audited_once_not_per_request(client, auth_users, engi
 def test_no_secret_shaped_value_lands_in_the_audit_detail_or_in_logs(
     client, auth_users, engine, caplog
 ) -> None:  # noqa: ANN001
-    """The screen has to accept every auth event's detail *and* no secret may appear in it."""
+    """The screen has to accept every auth event's detail *and* no secret may appear in it.
+
+    A "the secret is absent" assertion is only worth something if the flows really ran and
+    really logged, so this test carries a **positive control** on both capture paths (see
+    ``assert`` block after the flows). Without it, a capture that silently stopped
+    collecting records — the exact failure mode fixed in M1b-2's logging-isolation work —
+    would leave the test green while proving nothing.
+    """
     settings = get_settings()
     before = audit_snapshot(engine)
-    with caplog.at_level(logging.DEBUG):
+    with caplog.at_level(logging.DEBUG), capture_application_logs() as app_records:
         login(client, auth_users, "physician")
         first_cookie = client.cookies.get(settings.session_cookie_name)
         secrets, codes = run_every_auth_event(client, auth_users, engine)
@@ -161,11 +169,33 @@ def test_no_secret_shaped_value_lands_in_the_audit_detail_or_in_logs(
     }
     assert all(value for value in forbidden.values())
 
-    detail_blob = json.dumps([row["detail"] for row in audited_since(engine, before)], default=str)
+    # --- positive control ---------------------------------------------------------------
+    # "The secret is absent" is only evidence if the flows really ran and really logged.
+    # The audit snapshot must be non-empty: the auth flows really wrote audit rows.
+    audit_rows = audited_since(engine, before)
+    assert audit_rows, "no audit rows were written by the auth flows: the assertions below are vacuous"
+    # The log capture must be non-empty on both paths, and must include application records
+    # (not merely httpx/uvicorn noise), or "the secret is not in the logs" proves nothing.
+    assert caplog.records, "caplog captured no record at all: the log assertions below are vacuous"
+    assert app_records, (
+        "capture_application_logs() collected no application record: the log assertions below "
+        "are vacuous (has a dependency disabled the cardioauth loggers again?)"
+    )
+    assert any(record.name.startswith("cardioauth.") for record in app_records), (
+        "the captured records contain no cardioauth.* record"
+    )
+
+    detail_blob = json.dumps([row["detail"] for row in audit_rows], default=str)
     for label, value in forbidden.items():
         assert value not in detail_blob, f"{label} leaked into an audit detail"
 
-    log_blob = "\n".join(f"{record.name} {record.getMessage()} {record.__dict__}" for record in caplog.records)
+    # Both capture paths are screened: a record seen by only one of them is still a leak.
+    seen: dict[int, logging.LogRecord] = {}
+    for record in [*caplog.records, *app_records]:
+        seen.setdefault(id(record), record)
+    log_blob = "\n".join(
+        f"{record.name} {record.getMessage()} {record.__dict__}" for record in seen.values()
+    )
     for label, value in forbidden.items():
         assert value not in log_blob, f"{label} leaked into a log record"
 
