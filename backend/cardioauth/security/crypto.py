@@ -69,6 +69,17 @@ def _key_for(settings: Settings, purpose: bytes) -> bytes:
     return _derived_key(_app_key_bytes(settings), purpose)
 
 
+def derived_key_for(purpose: bytes, *, settings: Settings | None = None) -> bytes:
+    """A purpose-separated key derived from ``APP_KEY``, for a subsystem outside this module.
+
+    The blob-store envelope layer (``cardioauth.blobs.envelope``) needs a key-encryption key
+    and must not re-implement the KDF: one salt, one derivation, one place where "how a key is
+    derived" is defined. Callers pass their own ``purpose`` (an ``info`` string), so the blob
+    KEK is never the same key as the TOTP-secret key or a keyed-digest key.
+    """
+    return _key_for(settings or get_settings(), purpose)
+
+
 def encrypt_secret(plaintext: str, *, settings: Settings | None = None) -> bytes:
     """AES-256-GCM encrypt a recoverable secret (the TOTP shared secret).
 

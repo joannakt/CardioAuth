@@ -108,6 +108,24 @@ STATUS_ACTIONS: Final[frozenset[str]] = frozenset({"case.status_changed"})
 # letter.exported, ...) is the record, and a row per allowed request would bury it.
 AUTHZ_ACTIONS: Final[frozenset[str]] = frozenset({"authz.denied"})
 
+# --- ADDED IN M1b-3: blob-store events (§1.3, INV-5) -----------------------------------
+# The storage layer is where clinical documents actually live, so create/read/export/delete
+# are recorded at the store boundary and not only at the API boundary. Four verbs, one extra
+# for corruption: a read that fails its integrity check is an event a compliance reviewer
+# needs (it means stored evidence changed under a citation), and it must not be silent.
+# ``detail`` carries the PHI-free projection in
+# :func:`cardioauth.blobs.base.describe_metadata` — backend, encryption mode, namespace kind,
+# blob id, content type, sizes and digests. Never a filename, never a byte of the object.
+STORAGE_ACTIONS: Final[frozenset[str]] = frozenset(
+    {
+        "blob.created",
+        "blob.read",
+        "blob.exported",
+        "blob.deleted",
+        "blob.integrity_failed",
+    }
+)
+
 #: The complete vocabulary. An audit write whose action is not here is a bug.
 ALL_ACTIONS: Final[frozenset[str]] = (
     VIEW_ACTIONS
@@ -116,6 +134,7 @@ ALL_ACTIONS: Final[frozenset[str]] = (
     | AUTH_ACTIONS
     | STATUS_ACTIONS
     | AUTHZ_ACTIONS
+    | STORAGE_ACTIONS
 )
 
 __all__ = [
@@ -125,5 +144,6 @@ __all__ = [
     "EDIT_ACTIONS",
     "EXPORT_SIGN_ACTIONS",
     "STATUS_ACTIONS",
+    "STORAGE_ACTIONS",
     "VIEW_ACTIONS",
 ]
