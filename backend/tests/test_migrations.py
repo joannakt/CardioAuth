@@ -22,9 +22,12 @@ DDL_TABLES = {
 }
 
 
-def test_migration_applies_to_an_empty_database_and_downgrade_round_trips() -> None:
+def test_migration_applies_to_an_empty_database_and_downgrade_round_trips(monkeypatch) -> None:  # noqa: ANN001
     _drop_and_create(ROUNDTRIP_DB_NAME)
     url = url_for(ROUNDTRIP_DB_NAME)
+    # migrations/env.py resolves the URL from -x db_url, then this override, then Settings.
+    # Without the override the round-trip migrates the default (application) database.
+    monkeypatch.setenv("CARDIOAUTH_MIGRATION_DATABASE_URL", url)
     cfg = _alembic_config()
     engine = create_engine(url)
 
@@ -82,7 +85,7 @@ def test_ddl_declares_every_invariant_trigger(conn) -> None:
         "trg_criteria_set_version_guard",
         "trg_criterion_guard",
         "trg_require_published_criteria",
-        "trg_page_current_text_version" if False else "trg_fact_span_validate",
+        "trg_page_current_text_version",
     } <= triggers
 
 

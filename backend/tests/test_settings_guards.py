@@ -67,17 +67,47 @@ def test_synthetic_fixtures_are_refused_in_production() -> None:
     Settings(_env_file=None, cardioauth_env=Environment.test).assert_lab_role()
 
 
-def test_every_env_var_is_declared_in_one_place() -> None:
-    """Nothing outside cardioauth/settings.py may read os.environ, and the docs must list
-    every variable the settings object accepts."""
-    import re
+def _reads_environment(source: str) -> bool:
+    """True when *source* reads the process environment.
 
+    Parsed as an AST rather than matched with a regex, so a comment or docstring that
+    merely *mentions* ``os.environ`` — e.g. explaining why it is deliberately not used —
+    is not an offender. Only real accesses count: ``os.environ[...]``,
+    ``os.environ.get(...)`` and ``os.getenv(...)``.
+    """
+    import ast
+
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Attribute) and node.attr == "environ":
+            return True
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == "getenv":
+                return True
+            if isinstance(func, ast.Attribute) and func.attr == "getenv":
+                return True
+    return False
+
+
+def test_environment_guard_detects_real_reads_but_not_mentions() -> None:
+    """Negative control: the guard must still catch a genuine environment read, so that
+    making it AST-based did not quietly turn it into a no-op."""
+    assert _reads_environment("import os\nX = os.environ['CARDIOAUTH_ENV']\n") is True
+    assert _reads_environment("import os\nX = os.environ.get('CARDIOAUTH_ENV')\n") is True
+    assert _reads_environment("import os\nX = os.getenv('CARDIOAUTH_ENV')\n") is True
+    # A comment/docstring that merely names the mechanism is not a read.
+    assert _reads_environment("# no os.environ here: use Settings\n") is False
+    assert _reads_environment('"""Never read os.environ directly."""\n') is False
+
+
+def test_every_env_var_is_declared_in_one_place() -> None:
+    """Nothing outside cardioauth/settings.py may read the process environment, and the docs
+    must list every variable the settings object accepts."""
     offenders = []
     for path in (BACKEND_ROOT / "cardioauth").rglob("*.py"):
         if path.name == "settings.py":
             continue
-        body = path.read_text(encoding="utf-8")
-        if re.search(r"os\.environ|getenv\(", body):
+        if _reads_environment(path.read_text(encoding="utf-8")):
             offenders.append(str(path.relative_to(BACKEND_ROOT)))
     assert offenders == [], f"read environment through Settings instead: {offenders}"
 

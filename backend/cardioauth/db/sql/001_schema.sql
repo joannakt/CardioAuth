@@ -273,6 +273,10 @@ BEGIN
     RETURN NEW;
 END $$;
 
+CREATE TRIGGER trg_page_current_text_version
+    BEFORE INSERT OR UPDATE ON cardioauth.document_page
+    FOR EACH ROW EXECUTE FUNCTION cardioauth.guard_page_current_text_version();
+
 -- ---------------------------------------------------------------------------
 -- 2.5 Facts and their source spans
 -- ---------------------------------------------------------------------------
@@ -664,7 +668,11 @@ CREATE TRIGGER trg_fact_span_validate
 -- fact and its spans may be inserted in any order inside one transaction).
 CREATE FUNCTION cardioauth.fact_requires_span() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM cardioauth.fact_span s WHERE s.fact_id = NEW.id) THEN
+    -- Only a *surviving* fact must have a span. If the fact row was deleted earlier in
+    -- the same transaction there is nothing to store, so the deferred check is moot
+    -- (mirrors cardioauth.fact_span_delete_guard()).
+    IF EXISTS (SELECT 1 FROM cardioauth.fact f WHERE f.id = NEW.id)
+       AND NOT EXISTS (SELECT 1 FROM cardioauth.fact_span s WHERE s.fact_id = NEW.id) THEN
         PERFORM cardioauth.invariant_violation('fact_without_span',
             format('fact=%s field_key=%s', NEW.id, NEW.field_key));
     END IF;
@@ -735,9 +743,6 @@ BEGIN
     IF OLD.revoked_at IS NOT NULL THEN
         PERFORM cardioauth.invariant_violation('signoff_immutable', format('signoff=%s already revoked', OLD.id));
     END IF;
-    IF NEW.revoked_at IS NULL THEN
-        PERFORM cardioauth.invariant_violation('signoff_needs_revoke_reason', format('signoff=%s', OLD.id));
-    END IF;
 
     -- only the revocation columns may change, ever
     IF NEW.id IS DISTINCT FROM OLD.id
@@ -754,6 +759,11 @@ BEGIN
        OR NEW.verification_run_id IS DISTINCT FROM OLD.verification_run_id THEN
         PERFORM cardioauth.invariant_violation('signoff_immutable',
             format('signoff=%s only revoked_at/revoke_reason may be set once', OLD.id));
+    END IF;
+    -- Revoking is allowed exactly once, and only with a recorded reason (mirrors
+    -- ck_signoff_revoke_reason; the trigger reports it as an invariant, not a bare CHECK).
+    IF NEW.revoked_at IS NOT NULL AND NEW.revoke_reason IS NULL THEN
+        PERFORM cardioauth.invariant_violation('signoff_needs_revoke_reason', format('signoff=%s', OLD.id));
     END IF;
     RETURN NEW;
 END $$;

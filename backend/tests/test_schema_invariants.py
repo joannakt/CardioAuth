@@ -220,16 +220,19 @@ def test_only_one_published_version_can_be_effective_on_a_date(conn, seed) -> No
     """Exclusion constraint on the published date ranges (§2.6)."""
     set_id, first_version, _ = make_criteria_version(conn, seed, status="published", effective_from="2026-01-01")
     second_version = uuid.uuid4()
+    savepoint = conn.begin_nested()  # the failed INSERT aborts the transaction; roll back to here
     with pytest.raises(DBAPIError) as excinfo:
         conn.exec_driver_sql(
             "INSERT INTO cardioauth.criteria_set_version (id, criteria_set_id, version_no, status, source_citation, "
             "effective_from, published_at, published_by, fingerprint) VALUES (%s, %s, %s, %s, %s, %s, now(), %s, %s)",
             (second_version, set_id, 2, "published", "{}", "2026-06-01", seed.admin_id, "fp2"),
         )
+    savepoint.rollback()
     assert "ex_criteria_version_effective" in str(excinfo.value.orig)
-    # a non-overlapping range is fine
+    # closing the first range before the second begins is fine (ck_criteria_effective_range
+    # still requires effective_to >= effective_from, hence 2026-05-31, not a date in the past)
     conn.exec_driver_sql(
-        "UPDATE cardioauth.criteria_set_version SET effective_to = %s WHERE id = %s", ("2025-12-31", first_version)
+        "UPDATE cardioauth.criteria_set_version SET effective_to = %s WHERE id = %s", ("2026-05-31", first_version)
     )
     conn.exec_driver_sql(
         "INSERT INTO cardioauth.criteria_set_version (id, criteria_set_id, version_no, status, source_citation, "

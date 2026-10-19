@@ -131,6 +131,58 @@ class Payer(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class CriteriaSet(Base):
+    """A named, payer/procedure-scoped collection of medical-necessity criteria (INV-2).
+
+    Mapped here because ``case_record.criteria_set_version_id`` points into it: the FK
+    target has to exist in the metadata for the mapping to configure. The criteria text
+    itself lives in ``criterion`` rows of a *version* and is never read from code.
+    """
+
+    __tablename__ = "criteria_set"
+    id: Mapped[uuid.UUID] = _uuid_col()
+    key: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    procedure_code_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("cardioauth.procedure.id"))
+    payer_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("cardioauth.payer.id"))
+    scope: Mapped[str] = mapped_column(Text, nullable=False, server_default="global")
+    practice_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("cardioauth.practice.id"))
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("cardioauth.app_user.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class CriteriaSetVersion(Base):
+    """One immutable-once-published version of a criteria set (§2.6, INV-2).
+
+    ``status`` moves draft -> published -> retired and never backwards; the database
+    triggers (``trg_criteria_set_version_guard``, ``trg_criterion_guard``) enforce it, not
+    this mapping. Letters record the version they were generated against.
+    """
+
+    __tablename__ = "criteria_set_version"
+    __table_args__ = (UniqueConstraint("criteria_set_id", "version_no", name="uq_criteria_set_version"),)
+    id: Mapped[uuid.UUID] = _uuid_col()
+    criteria_set_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("cardioauth.criteria_set.id"), nullable=False
+    )
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="draft")
+    is_placeholder: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    verification_label: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default="UNVERIFIED \u2014 requires clinical review before use"
+    )
+    source_citation: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[date | None] = mapped_column(Date)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("cardioauth.app_user.id"))
+    fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class CaseRecord(Base):
     __tablename__ = "case_record"
     __table_args__ = (UniqueConstraint("practice_id", "case_number", name="uq_case_number"),)

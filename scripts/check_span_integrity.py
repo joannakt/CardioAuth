@@ -26,7 +26,7 @@ from sqlalchemy import create_engine, text  # noqa: E402
 
 ORPHAN_FACTS_SQL = text(
     """
-    SELECT count(*) FROM cardioauth.document_fact f
+    SELECT count(*) FROM cardioauth.fact f
     WHERE NOT EXISTS (SELECT 1 FROM cardioauth.fact_span s WHERE s.fact_id = f.id)
     """
 )

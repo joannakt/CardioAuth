@@ -318,16 +318,15 @@ def make_criteria_version(conn: Connection, seed: Seed, *, status: str = "draft"
         "VALUES (%s, %s, %s, %s, %s, %s)",
         (set_id, key, "TEST-ONLY criteria set", seed.procedure_id, seed.payer_id, seed.admin_id),
     )
+    # The version is created as a draft, its criteria are inserted, and only then is it
+    # published: trg_criterion_guard refuses to add or change criterion rows of a
+    # published version (INV-2), so a published version can never be assembled after the
+    # fact — that is the invariant, not a fixture detail.
     _exec(
         conn,
         "INSERT INTO cardioauth.criteria_set_version (id, criteria_set_id, version_no, status, source_citation, "
-        "effective_from, published_at, published_by, fingerprint) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        (
-            version_id, set_id, 1, status, '{"doc_name":"TEST-ONLY"}', effective_from,
-            datetime.now(timezone.utc) if status != "draft" else None,
-            seed.admin_id if status != "draft" else None,
-            "test-only-fingerprint",
-        ),
+        "effective_from, fingerprint) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (version_id, set_id, 1, "draft", '{"doc_name":"TEST-ONLY"}', effective_from, "test-only-fingerprint"),
     )
     _exec(
         conn,
@@ -339,6 +338,13 @@ def make_criteria_version(conn: Connection, seed: Seed, *, status: str = "draft"
             '{"op": "exists", "field": "lvef.value"}', ["lvef.value"],
         ),
     )
+    if status != "draft":
+        _exec(
+            conn,
+            "UPDATE cardioauth.criteria_set_version SET status = %s, published_at = %s, published_by = %s "
+            "WHERE id = %s",
+            (status, datetime.now(timezone.utc), seed.admin_id, version_id),
+        )
     return set_id, version_id, criterion_id
 
 

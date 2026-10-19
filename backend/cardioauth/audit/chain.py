@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
 import uuid
 from collections.abc import Iterable, Sequence
@@ -51,11 +50,47 @@ class AuditEntry:
     detail: dict[str, Any] = field(default_factory=dict)
 
 
+#: Fragments that mark an audit ``detail`` key as a place PHI would land. The audit log is
+#: readable by practice admins and exported for compliance review, so it records ids,
+#: counts, field *keys* and codes only — never patient values (INV-5). This is a cheap,
+#: deterministic screen in front of the database, not a substitute for the log filter in
+#: ``logging_setup.py`` or for never passing PHI in the first place.
+PHI_DETAIL_KEY_FRAGMENTS = (
+    "patient",
+    "name",
+    "dob",
+    "birth",
+    "ssn",
+    "mrn",
+    "member_id",
+    "address",
+    "phone",
+    "email",
+    "quote",
+    "page_text",
+    "text_body",
+    "diagnosis",
+    "note",
+)
+
+
+def _reject_phi_key(key: str, path: str) -> None:
+    """Refuse an audit detail key that names a PHI field, before the row is written."""
+    lowered = key.lower()
+    for fragment in PHI_DETAIL_KEY_FRAGMENTS:
+        if fragment in lowered:
+            raise AuditChainError(
+                f"{path}: audit detail key {key!r} looks like a PHI field "
+                f"(matched {fragment!r}); log ids, counts, field keys and codes only (INV-5)"
+            )
+
+
 def _validate_detail(value: Any, path: str = "detail") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
             if not isinstance(key, str):
                 raise AuditChainError(f"{path}: audit detail keys must be strings")
+            _reject_phi_key(key, path)
             _validate_detail(item, f"{path}.{key}")
         return
     if isinstance(value, list):
@@ -227,9 +262,9 @@ def _iter_rows(rows: Iterable[dict[str, Any]]) -> Sequence[dict[str, Any]]:
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI: verify the audit chain; non-zero exit when it is broken (§2.9, M1 acceptance 4)."""
     parser = argparse.ArgumentParser(description="Verify the CardioAuth audit hash chain.")
-    # No os.environ here: DATABASE_URL is a declared Settings field, and
+    # No direct environment read here: DATABASE_URL is a declared Settings field, and
     # tests/test_settings_guards.py enforces that nothing outside settings.py reads
-    # the environment directly.
+    # the environment itself.
     parser.add_argument("--database-url", default=None, help="SQLAlchemy URL (default: Settings.database_url)")
     parser.add_argument("--limit", type=int, default=None, help="verify only the first N rows")
     args = parser.parse_args(argv)
