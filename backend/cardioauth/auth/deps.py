@@ -42,6 +42,7 @@ from cardioauth.auth import service
 from cardioauth.audit.chain import AuditEntry
 from cardioauth.audit.service import record as audit_record
 from cardioauth.db.models import AppUser, UserSession
+from cardioauth.security.identifiers import request_id_for
 from cardioauth.settings import Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -61,9 +62,15 @@ def get_settings_dep() -> Settings:  # pragma: no cover - trivial, exercised ind
 
 
 def request_context(request: Request) -> service.RequestContext:
-    """Request identifiers only. The raw IP and user-agent are never logged or audited."""
+    """Request identifiers only. The raw IP and user-agent are never logged or audited.
+
+    ``request_id`` is the server-generated correlation id set by the HTTP middleware
+    (:mod:`cardioauth.security.identifiers`), not the ``X-Request-ID`` header: a caller-supplied
+    header value can be free text, and this value is written to the audit chain (INV-5). The
+    caller still receives the id back in the ``X-Request-ID`` response header.
+    """
     return service.RequestContext(
-        request_id=request.headers.get("x-request-id"),
+        request_id=request_id_for(request),
         ip=request.client.host if request.client else None,
         user_agent=request.headers.get("user-agent"),
     )

@@ -45,6 +45,7 @@ from cardioauth.authz.permissions import (
     evaluate,
     spec_for,
 )
+from cardioauth.security.identifiers import UNMATCHED_ROUTE
 
 logger = logging.getLogger(__name__)
 
@@ -340,8 +341,10 @@ def deny_undeclared_route(
         )
     else:  # pragma: no cover - unauthenticated caller: nothing to attribute the row to
         logger.warning(
+            # The route template, never the requested URL: an unmatched path is caller-supplied
+            # free text (cardioauth.security.identifiers, §7.5).
             "authz.undeclared_route_unauthenticated",
-            extra={"route": route_template or request.url.path, "method": request.method},
+            extra={"route": route_template or UNMATCHED_ROUTE, "method": request.method},
         )
     raise _error(
         status.HTTP_403_FORBIDDEN,

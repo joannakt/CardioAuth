@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Body, Depends, Request
 
 from cardioauth.auth.deps import AuthContext, require_authenticated
 from cardioauth.authz.deps import authorize_object
@@ -79,6 +79,115 @@ def _object_probe(permission: Permission, object_type: str) -> Callable[..., dic
     return endpoint
 
 
+# ---------------------------------------------------------------------------
+# PHI sentinel probes (tests/test_no_phi_in_denials.py)
+# ---------------------------------------------------------------------------
+#: The header the sentinel test puts a sentinel in. The ``{note}`` path segment is free text on
+#: purpose: the question these routes answer is whether a request carrying free text in a path
+#: segment — a URL someone pasted, a search term, a patient name — can write that text into a
+#: log line or the audit chain while the request is being *handled* (200), or while it is being
+#: *refused* (403 role denial, 403 undeclared route, 404 cross-practice).
+PHI_SENTINEL_HEADER = "x-sentinel-probe"
+PHI_PROBE_PATH = "/phi/{note}"
+
+
+def _received(request: Request, note: str, payload: dict[str, Any] | None) -> dict[str, Any]:
+    """What the endpoint actually saw. The positive control for the sentinel test: it proves the
+    sentinel travelled through the whole stack instead of the test asserting nothing happened."""
+    return {
+        "path_note": note,
+        "query_note": request.query_params.get("note"),
+        "body_note": (payload or {}).get("note"),
+        "header_note": request.headers.get(PHI_SENTINEL_HEADER),
+    }
+
+
+def _phi_permitted_probe() -> Callable[..., dict[str, Any]]:
+    @declare_policy(RoutePolicy.for_permission(Permission.CASE_READ))
+    def endpoint(
+        request: Request,
+        note: str,
+        payload: Annotated[dict[str, Any] | None, Body()] = None,
+    ) -> dict[str, Any]:
+        return _received(request, note, payload)
+
+    endpoint.__name__ = "probe_phi_permitted"
+    endpoint.__qualname__ = endpoint.__name__
+    return endpoint
+
+
+def _phi_role_denied_probe() -> Callable[..., dict[str, Any]]:
+    """A permission the coordinator role does not hold: reaches the role gate and is refused."""
+
+    @declare_policy(RoutePolicy.for_permission(Permission.USER_MANAGE))
+    def endpoint(
+        request: Request,
+        note: str,
+        payload: Annotated[dict[str, Any] | None, Body()] = None,
+    ) -> dict[str, Any]:
+        return {"this": "should never run"}
+
+    endpoint.__name__ = "probe_phi_role_denied"
+    endpoint.__qualname__ = endpoint.__name__
+    return endpoint
+
+
+def _phi_object_probe() -> Callable[..., dict[str, Any]]:
+    """``authorize_object`` with a real object id: practice A asking for practice B's case."""
+    dependency = authorize_object(permission=Permission.CASE_READ, object_type="case")
+
+    def endpoint(
+        request: Request,
+        note: str,
+        payload: Annotated[dict[str, Any] | None, Body()] = None,
+        loaded: Any = Depends(dependency),  # noqa: B008
+    ) -> dict[str, Any]:
+        return {"this": "should never run"}
+
+    endpoint.__name__ = "probe_phi_object_cross_practice"
+    endpoint.__qualname__ = endpoint.__name__
+    declare_policy(RoutePolicy.for_permission(Permission.CASE_READ, object_type="case"))(endpoint)
+    return endpoint
+
+
+def _phi_undeclared_probe() -> Callable[..., dict[str, Any]]:
+    """No policy at all: the deny-by-default backstop refuses it (``permission_not_declared``).
+
+    The path is ``/no-policy`` rather than ``/undeclared`` so that it does not collide with the
+    route-name assertions the existing policy tests make about ``.../undeclared``.
+    """
+
+    def endpoint(
+        request: Request,
+        note: str,
+        payload: Annotated[dict[str, Any] | None, Body()] = None,
+    ) -> dict[str, Any]:
+        return {"this": "should never run"}
+
+    endpoint.__name__ = "probe_phi_no_policy"
+    endpoint.__qualname__ = endpoint.__name__
+    return endpoint
+
+
+#: (method, path, endpoint *factory*, route name) — see tests/test_no_phi_in_denials.py.
+#:
+#: The factories are called per router build, never once at import: ``PolicyRoute`` marks an
+#: endpoint whose policy dependencies it has attached (``_INJECTED``) so that including the same
+#: route twice cannot attach two copies of the gate, which means a module-level endpoint object
+#: would silently lose its gate in the second and every later app built in the same process.
+PHI_PROBE_ROUTES: tuple[tuple[str, str, Callable[[], Callable[..., Any]], str], ...] = (
+    ("POST", f"{PHI_PROBE_PATH}/permitted", _phi_permitted_probe, "probe_phi_permitted"),
+    ("POST", f"{PHI_PROBE_PATH}/denied", _phi_role_denied_probe, "probe_phi_role_denied"),
+    ("POST", f"{PHI_PROBE_PATH}/no-policy", _phi_undeclared_probe, "probe_phi_no_policy"),
+    (
+        "POST",
+        f"{PHI_PROBE_PATH}/objects/case/{{object_id}}",
+        _phi_object_probe,
+        "probe_phi_object_cross_practice",
+    ),
+)
+
+
 def build_probe_router() -> APIRouter:
     router = APIRouter(prefix=PROBE_PREFIX, tags=["test-only"], route_class=PolicyRoute)
 
@@ -105,6 +214,9 @@ def build_probe_router() -> APIRouter:
     undeclared.__name__ = "probe_undeclared"
     undeclared.__qualname__ = "probe_undeclared"
     router.add_api_route("/undeclared", undeclared, methods=["GET"], name="probe_undeclared")
+
+    for method, path, make_endpoint, name in PHI_PROBE_ROUTES:
+        router.add_api_route(path, make_endpoint(), methods=[method], name=name)
     return router
 
 
@@ -117,4 +229,13 @@ def build_probe_app() -> Any:
     return app
 
 
-__all__ = ["OBJECT_ROUTES", "PROBE_PREFIX", "build_probe_app", "build_probe_router", "facts_from_query"]
+__all__ = [
+    "OBJECT_ROUTES",
+    "PHI_PROBE_PATH",
+    "PHI_PROBE_ROUTES",
+    "PHI_SENTINEL_HEADER",
+    "PROBE_PREFIX",
+    "build_probe_app",
+    "build_probe_router",
+    "facts_from_query",
+]
