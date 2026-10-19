@@ -23,7 +23,7 @@ def _production_settings(**overrides: object) -> Settings:
         "s3_bucket": "cardioauth-prod",
         "s3_region": "us-east-1",
         "s3_server_side_encryption": "aws:kms",
-        "app_key": "not-the-dev-key",
+        "app_key": "not-the-dev-key-but-long-enough-for-real-use-ok",
         "database_require_tls": True,
         "session_cookie_secure": True,
     }
@@ -42,6 +42,7 @@ def test_safe_production_configuration_is_accepted() -> None:
         ({"cardioauth_phi_logging": "dev"}, "CARDIOAUTH_PHI_LOGGING=dev"),
         ({"blob_backend": "local"}, "BLOB_BACKEND=local"),
         ({"app_key": DEV_APP_KEY}, "APP_KEY is still the development default"),
+        ({"app_key": "too-short-key"}, "at least 32"),
         ({"database_require_tls": False}, "DATABASE_REQUIRE_TLS=false"),
         ({"session_cookie_secure": False}, "SESSION_COOKIE_SECURE=false"),
         ({"s3_server_side_encryption": None}, "server-side encryption"),

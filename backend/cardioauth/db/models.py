@@ -64,6 +64,7 @@ class AppUser(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     failed_login_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lockout_stage: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -82,6 +83,35 @@ class UserSession(Base):
     user_agent_hash: Mapped[bytes | None] = mapped_column(LargeBinary)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reauth_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    two_factor_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class TotpUsedCode(Base):
+    """Single-use ledger for TOTP codes (revision 0002). A replayed (code, step) pair is
+    refused by the unique constraint; the code itself is only ever stored as a keyed hash."""
+
+    __tablename__ = "totp_used_code"
+    __table_args__ = (UniqueConstraint("user_id", "code_hash", "time_step", name="uq_totp_used_code_user_code_step"),)
+
+    id: Mapped[uuid.UUID] = _uuid_col()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cardioauth.app_user.id"), nullable=False)
+    code_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    time_step: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class UserRecoveryCode(Base):
+    """Single-use TOTP recovery codes (revision 0002). Keyed-hash at rest; the plaintext is
+    returned exactly once, when the codes are issued."""
+
+    __tablename__ = "user_recovery_code"
+
+    id: Mapped[uuid.UUID] = _uuid_col()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cardioauth.app_user.id"), nullable=False)
+    code_hash: Mapped[bytes] = mapped_column(LargeBinary, nullable=False, unique=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
@@ -243,6 +273,8 @@ __all__ = [
     "Payer",
     "Practice",
     "Procedure",
+    "TotpUsedCode",
     "UserInvitation",
+    "UserRecoveryCode",
     "UserSession",
 ]

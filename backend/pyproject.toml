@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart",
     "argon2-cffi",   # M1b: Argon2id password hashing
     "pyotp",         # M1b: TOTP second factor
+    "cryptography",  # M1b: AES-GCM encryption of TOTP secrets, keyed digests
 ]
 
 [project.optional-dependencies]
@@ -37,6 +38,11 @@ cardioauth-audit-verify = "cardioauth.audit.chain:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cardioauth*"]
+
+# The bundled breach-password starter list and the authoritative DDL travel with the package:
+# neither is code, both are load-bearing at runtime (validation, migrations).
+[tool.setuptools.package-data]
+cardioauth = ["db/sql/*.sql", "security/data/*.txt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

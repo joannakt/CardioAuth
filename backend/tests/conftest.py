@@ -10,6 +10,7 @@ Synthetic data only: every value below is obviously fake and never clinical trut
 from __future__ import annotations
 
 import os
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -22,6 +23,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import DBAPIError
 
@@ -386,3 +388,138 @@ def insert_letter_chain(conn: Connection, seed: Seed) -> None:
         (run_id, version_id, "succeeded", "mock", "mock-verify-v1", "verify-v1", '{"sentences": 0}'),
     )
     seed.extra.update(letter=letter_id, letter_version=version_id, verification_run=run_id)
+
+
+# ---------------------------------------------------------------------------
+# M1b-1 authentication fixtures (identity and session core)
+# ---------------------------------------------------------------------------
+# Every credential below is a synthetic test value for a synthetic account. Nothing here is
+# ever used outside the test database, and nothing clinical appears in this file.
+TEST_COORDINATOR_PASSWORD = "corr-Str0ng-Passphrase-01"
+TEST_PHYSICIAN_PASSWORD = "phys-Str0ng-Passphrase-02"
+TEST_ADMIN_PASSWORD = "adm1n-Str0ng-Passphrase-03"
+
+
+@dataclass
+class AuthUsers:
+    """Three committed accounts in their own practice, removed after the test."""
+
+    practice_id: uuid.UUID
+    ids: dict[str, uuid.UUID]
+    emails: dict[str, str]
+    passwords: dict[str, str]
+
+    def email(self, role: str) -> str:
+        return self.emails[role]
+
+    def password(self, role: str) -> str:
+        return self.passwords[role]
+
+
+@pytest.fixture(scope="session")
+def auth_app(test_database_url: str):  # noqa: ANN201 - FastAPI app under test
+    """The real application, pointed at the migrated test database.
+
+    Argon2 parameters are reduced *for the test process only* (8 MiB, time 1) so that a
+    suite with dozens of logins stays fast; ``test_security_primitives.py`` asserts that the
+    shipped defaults are the design's parameters (64 MiB, time 3, parallelism 4).
+    """
+    os.environ["DATABASE_URL"] = test_database_url
+    os.environ["CARDIOAUTH_ENV"] = "test"
+    os.environ["CARDIOAUTH_PHI_LOGGING"] = "off"
+    os.environ["ARGON2_MEMORY_KIB"] = "8192"
+    os.environ["ARGON2_TIME_COST"] = "1"
+    os.environ["ARGON2_PARALLELISM"] = "1"
+
+    from cardioauth.db import reset_engine
+    from cardioauth.settings import get_settings
+
+    get_settings.cache_clear()
+    reset_engine()
+
+    from cardioauth.api.main import create_app
+
+    return create_app()
+
+
+@pytest.fixture
+def frozen_totp_clock(monkeypatch) -> float:  # noqa: ANN001
+    """Pin the TOTP clock so one test cannot straddle a 30-second step boundary.
+
+    The single-use ledger is keyed by (user, code, time step). A call sequence that crosses a
+    step boundary would legitimately start refusing a code the test still expects to be
+    accepted — a flaky test that would look like a security bug. Freezing ``time.time`` for
+    the duration of one test removes that ambiguity; it changes nothing about the production
+    path (``verify_code`` reads the same clock either way).
+    """
+    from cardioauth.security import totp as totp_module
+
+    frozen = time.time()
+    monkeypatch.setattr(totp_module.time, "time", lambda: frozen)
+    return frozen
+
+
+@pytest.fixture
+def client(auth_app, frozen_totp_clock) -> Iterator[object]:  # noqa: ANN001
+    """A TestClient with its own cookie jar, so tests cannot leak sessions into each other."""
+    from fastapi.testclient import TestClient
+
+    with TestClient(auth_app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def auth_users(engine) -> Iterator[AuthUsers]:  # noqa: ANN001
+    """A practice with a coordinator, a physician and an admin (synthetic, committed)."""
+    from cardioauth.security import passwords
+    from cardioauth.settings import get_settings
+
+    settings = get_settings()
+    practice_id = uuid.uuid4()
+    suffix = uuid.uuid4().hex[:10]
+    emails = {
+        "coordinator": f"coordinator-{suffix}@test-only.invalid",
+        "physician": f"physician-{suffix}@test-only.invalid",
+        "admin": f"admin-{suffix}@test-only.invalid",
+    }
+    plaintext = {
+        "coordinator": TEST_COORDINATOR_PASSWORD,
+        "physician": TEST_PHYSICIAN_PASSWORD,
+        "admin": TEST_ADMIN_PASSWORD,
+    }
+    ids = {role: uuid.uuid4() for role in emails}
+    with Session(engine) as session:
+        session.execute(
+            text("INSERT INTO cardioauth.practice (id, name) VALUES (:id, :name)"),
+            {"id": practice_id, "name": f"TEST-ONLY Practice {suffix}"},
+        )
+        for role, user_id in ids.items():
+            session.execute(
+                text(
+                    "INSERT INTO cardioauth.app_user (id, practice_id, email, password_hash, full_name, role) "
+                    "VALUES (:id, :practice_id, :email, :password_hash, :full_name, :role)"
+                ),
+                {
+                    "id": user_id,
+                    "practice_id": practice_id,
+                    "email": emails[role],
+                    "password_hash": passwords.hash_password(plaintext[role], settings=settings),
+                    "full_name": f"TEST-ONLY {role}",
+                    "role": role,
+                },
+            )
+        session.commit()
+
+    users = AuthUsers(practice_id=practice_id, ids=ids, emails=emails, passwords=plaintext)
+    try:
+        yield users
+    finally:
+        with Session(engine) as session:
+            session.execute(
+                text("DELETE FROM cardioauth.app_user WHERE practice_id = :practice_id"),
+                {"practice_id": practice_id},
+            )
+            session.execute(
+                text("DELETE FROM cardioauth.practice WHERE id = :practice_id"), {"practice_id": practice_id}
+            )
+            session.commit()

@@ -19,6 +19,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger(__name__)
 
 DEV_APP_KEY = "dev-only-insecure-app-key-change-me"  # noqa: S105 - dev default, refused in production
+#: Minimum APP_KEY length in bytes. Mirrors ``security.crypto.MIN_APP_KEY_BYTES`` (kept here
+#: too so the production guard can state the requirement without importing the crypto stack).
+MIN_APP_KEY_BYTES = 32
 
 
 class Environment(str, Enum):
@@ -98,10 +101,32 @@ class Settings(BaseSettings):
     # --- sessions and second factor (§7.1, §7.2, §11 Q4) -------------------
     session_cookie_name: str = "cardioauth_session"
     session_cookie_secure: bool = False  # dev default; forced true under production
+    session_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
     session_idle_minutes: int = 15
     session_absolute_hours: int = 8
     session_reauth_minutes: int = 5
     totp_issuer: str = "CardioAuth"
+    # --- password policy, Argon2id and lockout (§7.1) ----------------------
+    # Argon2id parameters are the design's (memory 64 MiB, time 3, parallelism 4).
+    argon2_memory_kib: int = 65536
+    argon2_time_cost: int = 3
+    argon2_parallelism: int = 4
+    argon2_hash_len: int = 32
+    password_min_length: int = 12
+    password_max_length: int = 128
+    # None = use the list bundled with the package; set a path for the full top-100k list.
+    password_breach_list_path: str | None = None
+    auth_lockout_threshold: int = 5
+    auth_lockout_base_minutes: int = 15
+    auth_lockout_max_minutes: int = 1440
+    # --- TOTP (§7.1) -------------------------------------------------------
+    totp_digits: int = 6
+    totp_period_seconds: int = 30
+    totp_drift_steps: int = 1  # ±1 step, per the design
+    totp_recovery_code_count: int = 10
+    # Roles that must have a second factor enrolled to complete a login. Coordinators are
+    # prompted (and flagged) rather than blocked — §7.1 and §11 Q4.
+    totp_required_roles: str = "physician,admin"
 
     # --- data locations ----------------------------------------------------
     criteria_dir: str = "./data/criteria"
@@ -123,6 +148,14 @@ class Settings(BaseSettings):
     @property
     def cookie_secure(self) -> bool:
         return self.is_production or self.session_cookie_secure
+
+    @property
+    def totp_required_role_set(self) -> frozenset[str]:
+        return frozenset(part.strip() for part in self.totp_required_roles.split(",") if part.strip())
+
+    @property
+    def app_key_bytes(self) -> bytes:
+        return self.app_key.get_secret_value().encode("utf-8")
 
     def assert_runtime_safe(self) -> None:
         """Refuse to start when the configuration is unsafe. Called at startup and by
@@ -147,6 +180,15 @@ class Settings(BaseSettings):
                 )
             if self.app_key.get_secret_value() == DEV_APP_KEY:
                 problems.append("APP_KEY is still the development default; it protects TOTP secrets at rest")
+            elif len(self.app_key_bytes) < MIN_APP_KEY_BYTES:
+                # Key material for the identity core: TOTP secrets are AES-GCM encrypted with a
+                # key derived from APP_KEY and every keyed digest uses it. Production must not
+                # start with a short key (crypto.CryptoKeyError would otherwise surface at the
+                # first enrolment instead of at startup).
+                problems.append(
+                    f"APP_KEY is {len(self.app_key_bytes)} bytes; at least {MIN_APP_KEY_BYTES} "
+                    "bytes of key material are required (TOTP secret encryption, keyed hashing)"
+                )
             if not self.bucket_configured_for_production():
                 problems.append("BLOB_BACKEND=s3 requires S3_BUCKET, S3_REGION and server-side encryption")
             if self.database_require_tls is False:

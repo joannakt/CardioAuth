@@ -1,5 +1,6 @@
-"""FastAPI application factory. M1a serves the health endpoint (and nothing else: case,
-document, criteria, letter and verification routers arrive with their milestones)."""
+"""FastAPI application factory. M1a serves the health endpoint; M1b-1 adds ``/api/auth``
+(login, second factor, sessions, step-up). Case, document, criteria, letter and verification
+routers arrive with their milestones."""
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from fastapi.responses import JSONResponse
 
 from cardioauth import __version__
 from cardioauth.api.health import router as health_router
+from cardioauth.auth.router import router as auth_router
 from cardioauth.logging_setup import configure_logging
 from cardioauth.settings import get_settings
 
@@ -30,6 +32,7 @@ def create_app() -> FastAPI:
         openapi_url="/api/openapi.json" if not settings.is_production else None,
     )
     app.include_router(health_router, prefix="/api")
+    app.include_router(auth_router)
 
     @app.middleware("http")
     async def request_context(request: Request, call_next):  # type: ignore[no-untyped-def]

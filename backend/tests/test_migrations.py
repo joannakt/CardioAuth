@@ -19,6 +19,8 @@ DDL_TABLES = {
     "fact", "fact_span", "criteria_set", "criteria_set_version", "criterion", "criteria_set_version_selection",
     "criteria_evaluation", "criterion_verdict", "criterion_verdict_fact", "gap_item", "letter", "letter_version",
     "verification_run", "claim_verdict", "claim_verdict_fact", "signoff",
+    # revision 0002 (M1b-1 identity and session core)
+    "totp_used_code", "user_recovery_code",
 }
 
 
@@ -40,7 +42,7 @@ def test_migration_applies_to_an_empty_database_and_downgrade_round_trips(monkey
                 text("SELECT tablename FROM pg_tables WHERE schemaname = 'cardioauth'")
             )
         }
-    assert revision == "0001"
+    assert revision == "0002"
     assert tables == DDL_TABLES, f"schema drift: {DDL_TABLES ^ tables}"
 
     command.downgrade(cfg, "base")
@@ -108,7 +110,7 @@ def test_orm_matches_the_migrated_database(conn) -> None:
         assert not missing, f"ORM columns missing from {key}: {sorted(missing)}"
 
 
-def test_expected_head_matches_the_only_revision(conn) -> None:
+def test_expected_head_matches_the_latest_revision(conn) -> None:
     from cardioauth.api.health import expected_head_revision
 
-    assert expected_head_revision() == "0001"
+    assert expected_head_revision() == "0002"
